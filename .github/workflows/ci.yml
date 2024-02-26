@@ -1,0 +1,77 @@
+name: ci
+on:
+  push:
+jobs:
+  build:
+
+    runs-on: ${{ matrix.host_os }}
+
+    strategy:
+      matrix:
+        target:
+          - i686-pc-windows-msvc      # 32bit windows
+          - x86_64-pc-windows-msvc    # 64bit windows
+          - i686-unknown-linux-gnu    # 32bit linux
+          - x86_64-unknown-linux-gnu  # 64bit linux
+          - aarch64-unknown-linux-gnu # ARM 64bit linux
+          - aarch64-linux-android     # ARM 64bit android
+          - armv7-linux-androideabi   # ARM v7 android
+          - aarch64-apple-ios         # ARM64 iOS
+          - aarch64-apple-darwin      # ARM64 Apple Darwin
+          - x86_64h-apple-darwin      # "macOS with late-gen Intel (at least Haswell)"
+
+        rust_channel:
+          - stable
+
+        include:
+          - target: i686-pc-windows-msvc
+            host_os: windows-latest
+            extension: dll
+
+          - target: x86_64-pc-windows-msvc
+            host_os: windows-latest
+            extension: dll
+
+          - target: i686-unknown-linux-gnu
+            host_os: ubuntu-22.04
+            extension: so
+
+          - target: x86_64-unknown-linux-gnu
+            host_os: ubuntu-22.04
+            extension: so
+
+          - target: aarch64-unknown-linux-gnu
+            host_os: ubuntu-22.04
+            extension: so
+
+          - target: aarch64-linux-android
+            host_os: ubuntu-22.04
+            extension: so
+
+          - target: armv7-linux-androideabi
+            host_os: ubuntu-22.04
+            extension: so
+
+          - target: aarch64-apple-ios
+            host_os: macos-12
+            extension: dylib
+
+          - target: aarch64-apple-darwin
+            host_os: macos-12
+            extension: dylib
+
+          - target: x86_64h-apple-darwin
+            host_os: macos-12
+            extension: dylib
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - run: rustup toolchain add --profile=minimal ${{ matrix.rust_channel }}
+      - run: rustup target add --toolchain=${{ matrix.rust_channel }} ${{ matrix.target }}
+      - run: cargo +${{ matrix.rust_channel }} build -vv --target=${{ matrix.target }} --release
+      - name: Archive library
+        uses: actions/upload-artifact@v2
+        with:
+           name: library-${{ matrix.target }}
+           path: target/${{ matrix.target }}/release/*.${{ matrix.extension }}
