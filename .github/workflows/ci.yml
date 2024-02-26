@@ -11,14 +11,14 @@ jobs:
         target:
           - i686-pc-windows-msvc      # 32bit windows
           - x86_64-pc-windows-msvc    # 64bit windows
-          - i686-unknown-linux-gnu    # 32bit linux
           - x86_64-unknown-linux-gnu  # 64bit linux
+          - aarch64-apple-ios         # ARM64 iOS
+          - aarch64-apple-darwin      # ARM64 Apple Darwin
+          - x86_64-apple-darwin       # macOS with Intel cpu
           - aarch64-unknown-linux-gnu # ARM 64bit linux
           - aarch64-linux-android     # ARM 64bit android
           - armv7-linux-androideabi   # ARM v7 android
-          - aarch64-apple-ios         # ARM64 iOS
-          - aarch64-apple-darwin      # ARM64 Apple Darwin
-          - x86_64h-apple-darwin      # "macOS with late-gen Intel (at least Haswell)"
+          - i686-unknown-linux-gnu    # 32bit linux
 
         rust_channel:
           - stable
@@ -27,51 +27,86 @@ jobs:
           - target: i686-pc-windows-msvc
             host_os: windows-latest
             extension: dll
-
+            command: cargo
           - target: x86_64-pc-windows-msvc
             host_os: windows-latest
             extension: dll
-
-          - target: i686-unknown-linux-gnu
-            host_os: ubuntu-22.04
-            extension: so
-
+            command: cargo
           - target: x86_64-unknown-linux-gnu
             host_os: ubuntu-22.04
             extension: so
-
+            command: cargo
+          - target: aarch64-apple-ios
+            host_os: macos-12
+            command: cargo
+            extension: dylib
+          - target: aarch64-apple-darwin
+            host_os: macos-12
+            command: cargo
+            extension: dylib
+          - target: x86_64-apple-darwin
+            host_os: macos-12
+            extension: dylib
+            command: cargo
+          # cross compile with CROSS: https://github.com/cross-rs/cross
+          - target: i686-unknown-linux-gnu
+            host_os: ubuntu-22.04
+            extension: so
+            command: cross
           - target: aarch64-unknown-linux-gnu
             host_os: ubuntu-22.04
             extension: so
-
+            command: cross
           - target: aarch64-linux-android
             host_os: ubuntu-22.04
             extension: so
-
+            command: cross
           - target: armv7-linux-androideabi
             host_os: ubuntu-22.04
             extension: so
-
-          - target: aarch64-apple-ios
-            host_os: macos-12
-            extension: dylib
-
-          - target: aarch64-apple-darwin
-            host_os: macos-12
-            extension: dylib
-
-          - target: x86_64h-apple-darwin
-            host_os: macos-12
-            extension: dylib
-
+            command: cross
+#
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
       - run: rustup toolchain add --profile=minimal ${{ matrix.rust_channel }}
       - run: rustup target add --toolchain=${{ matrix.rust_channel }} ${{ matrix.target }}
-      - run: cargo +${{ matrix.rust_channel }} build -vv --target=${{ matrix.target }} --release
+      - name: Install Cross
+        if: matrix.command == 'cross'
+        shell: bash
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - run: ${{ matrix.command }} +${{ matrix.rust_channel }} build -vv --target=${{ matrix.target }} --release
       - name: Archive library
         uses: actions/upload-artifact@v2
         with:
-           name: library-${{ matrix.target }}
+           name: ${{ matrix.target }}
            path: target/${{ matrix.target }}/release/*.${{ matrix.extension }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success() && github.ref == 'refs/heads/master'
+    steps:
+      - name: Download all workflow artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: r-${{ github.sha }}
+          release_name: Release ${{ github.sha }}
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./artifacts
+          asset_name: release-artifacts
+          asset_content_type: application/zip
